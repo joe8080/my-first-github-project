@@ -25,3 +25,10 @@ Next Steps:
 2. Commit the changes
 3. See the history
 4. Experiment!
+
+
+UPDATE: I just made my first commit!
+====================================
+This is a new change to show how Git tracks modifications.
+Every time I save changes like this, I can create a new "commit"
+and Git will remember what changed, when, and why.
