@@ -1,0 +1,27 @@
+Learning Notes - GitHub Basics
+================================
+
+What I'm Learning:
+- GitHub stores files in "repositories" (repos)
+- Each change is called a "commit"
+- I can see the history of all changes
+- Files can be any type: code, text, images, etc.
+
+Key Concepts:
+- Repository = A project folder
+- Commit = Saving a snapshot of changes
+- Push = Uploading changes to GitHub
+- Pull = Downloading changes from GitHub
+- Branch = A separate version to experiment with
+
+Why This Matters:
+- Never lose work (everything is backed up)
+- Can undo mistakes (go back to any previous version)
+- Collaborate with others (work on same project)
+- Show your work (portfolio for jobs/clients)
+
+Next Steps:
+1. Make some changes to these files
+2. Commit the changes
+3. See the history
+4. Experiment!

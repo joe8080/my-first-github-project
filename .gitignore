@@ -1,0 +1,23 @@
+# This file tells Git what NOT to upload to GitHub
+# Useful for keeping secrets and temporary files private
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files (these often contain passwords!)
+.env
+*.env
+
+# Personal notes you don't want to share
+private-notes.txt
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp

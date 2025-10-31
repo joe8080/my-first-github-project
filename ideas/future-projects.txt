@@ -1,0 +1,10 @@
+Project Ideas for the Future
+============================
+
+1. Build a personal website
+2. Create a to-do list app
+3. Make a calculator
+4. Build a weather app
+5. Create a portfolio showcase
+
+Remember: Start small and build up!
