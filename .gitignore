@@ -5,19 +5,27 @@
 __pycache__/
 *.pyc
 *.pyo
-
 # Environment files (these often contain passwords!)
 .env
 *.env
-
 # Personal notes you don't want to share
 private-notes.txt
-
 # Operating system files
 .DS_Store
 Thumbs.db
-
 # IDE/Editor files
 .vscode/
 .idea/
 *.swp
+node_modules
+dist
+*.log
+screenshots/
+qa-shots/
+output/
+.gev-logs/
+.gev-cache/
+.gstack/
+3d-models/
+pinokio/ENVIRONMENT
+pinokio/.installed
