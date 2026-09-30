@@ -14,7 +14,7 @@ Implementation and recovery steps: [`supabase/README.md`](../supabase/README.md)
 | Paper account | `PA******3BJ7`, ACTIVE, `paper-api.alpaca.markets` |
 | Open orders | 0 |
 | Positions | 8 legacy longs (AAPL, AMD, GOOGL, MSFT, NVDA, QQQ, SPY, TSLA), all pre-baseline and untouched |
-| Execution test | **PENDING**: the market was closed while this was prepared (see §5) |
+| Execution test | **PASSED** 30 Sep 2026, 14:41 London: accepted→cancelled, accepted→filled, closed, reconciled (see §5) |
 
 ## 2. Where it runs
 
@@ -130,6 +130,32 @@ Every step records the broker's actual HTTP status, order status (`new`/`accepte
 It then reconciles into `paper_orders` with `origin = 'DIAGNOSTIC'`.
 
 Diagnostic results never enter strategy performance: the scoreboard reads only `paper_strategy_trades`.
+
+### Result: 30 Sep 2026 (times UTC; London = UTC+1)
+
+Pre-checks at 13:40:57:
+- The broker clock showed `is_open: true`.
+- Health was `HEALTHY` with 0 open orders.
+- F quote was bid 12.23 / ask 12.24, 0.3 s old.
+- The dry run was blocked only by the kill switch and the unarmed window.
+
+Window armed 13:41:06 to 14:11:06; strategies stayed disabled.
+
+| Phase | client_order_id | Broker sequence (HTTP) | Result |
+|---|---|---|---|
+| rest | `mj-diag-20260930-134113-rest` | submit 200 `pending_new` 13:41:13.44 → `new` 13:41:13.45 → DELETE 204 → `canceled` 13:41:14.09 | filled 0 ✔ |
+| fill | `mj-diag-20260930-134121-fill` | submit 200 `pending_new` 13:41:21.75 → `new` → `filled` 13:41:22.82 | 1 sh @ $12.25 (limit 12.27) ✔ |
+| close | `mj-diag-20260930-134130-close` | submit 200 `pending_new` 13:41:31.00 → `new` → `filled` 13:41:31.68 | sold 1 sh @ $12.24 (limit 12.22) ✔ |
+
+- **Partial fills:** none occurred. Each order filled its full 1 share in one execution. The remainder-cancel path was exercised only by the rest phase (a full cancel).
+- **Final reconciled state:**
+  - Diagnostic net qty in F is 0; diagnostic cash flow −$0.01.
+  - 0 open orders.
+  - Legacy positions unchanged: AAPL 17, AMD 9, GOOGL 13, MSFT 12, NVDA 24, QQQ 6, SPY 6, TSLA 12.
+  - Ledger origins are all `DIAGNOSTIC`.
+  - Window disarmed and kill switch re-engaged.
+  - `strategy_orders_enabled` is still false.
+  - Health `HEALTHY` / `ORDERS_BLOCKED`.
 
 ## 6. Operating guide
 
