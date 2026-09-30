@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Worthing Skies · Live planes and ships</title>
+<meta name="description" content="A tactical live map of every plane and ship around Worthing, West Sussex. Public ADS-B and AIS data on a satellite basemap. One file, no install." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23050811' stroke='%2300f0ff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%2300f0ff'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #050811;
+    --cyan: #00f0ff;
+    --cyan-dim: rgba(0, 240, 255, 0.55);
+    --green: #00ff66;
+    --amber: #ffcc00;
+    --red: #ff3344;
+    --panel: rgba(5, 8, 17, 0.82);
+    --line: rgba(0, 240, 255, 0.35);
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--cyan); font-family: var(--mono); overflow: hidden; }
+  button { font-family: var(--mono); }
+
+  /* ---- map ---- */
+  #map { position: fixed; inset: 0; background: #000; cursor: grab; touch-action: none; }
+  #map.dragging { cursor: grabbing; }
+  #tiles { position: absolute; left: 0; top: 0; will-change: transform; }
+  #tiles img { position: absolute; width: 256px; height: 256px; image-rendering: auto; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+  #overlay { position: absolute; inset: 0; pointer-events: none; }
+
+  /* sensor looks */
+  body[data-style="crt"] #tiles { filter: saturate(0.4) contrast(1.15) brightness(0.9) sepia(0.25) hue-rotate(150deg); }
+  body[data-style="nvg"] #tiles { filter: grayscale(1) brightness(1.15) contrast(1.2) sepia(1) hue-rotate(70deg) saturate(4); }
+  body[data-style="flir"] #tiles { filter: grayscale(1) invert(1) contrast(1.35) brightness(0.95); }
+  body[data-style="normal"] #tiles { filter: saturate(0.85) brightness(0.9); }
+  #scanlines { position: fixed; inset: 0; pointer-events: none; display: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.28) 2px 3px); mix-blend-mode: multiply; }
+  body[data-style="crt"] #scanlines, body[data-style="nvg"] #scanlines { display: block; }
+
+  /* ---- HUD chrome ---- */
+  .hud { position: fixed; pointer-events: none; z-index: 5; }
+  .hud * { pointer-events: auto; }
+  #title { left: 22px; top: 16px; }
+  #title h1 { margin: 0; font-size: 26px; letter-spacing: 0.32em; font-weight: 700; color: #e8fbff; text-shadow: 0 0 18px rgba(0,240,255,0.55); }
+  #title h1 span { color: var(--cyan); }
+  #title small { display: block; letter-spacing: 0.4em; font-size: 10px; color: var(--cyan-dim); margin-top: 4px; }
+  #strip { top: 14px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.3em; color: var(--green); border: 1px solid rgba(0,255,102,0.35); padding: 6px 14px; background: var(--panel); }
+  #clock { right: 22px; top: 16px; text-align: right; font-size: 12px; letter-spacing: 0.18em; line-height: 1.6; }
+  #clock b { color: #e8fbff; font-weight: 600; }
+  .corner { position: fixed; width: 26px; height: 26px; border-color: var(--cyan); border-style: solid; border-width: 0; opacity: 0.8; z-index: 5; pointer-events: none; }
+  .corner.tl { left: 12px; top: 70px; border-left-width: 2px; border-top-width: 2px; }
+  .corner.tr { right: 12px; top: 70px; border-right-width: 2px; border-top-width: 2px; }
+  .corner.bl { left: 12px; bottom: 12px; border-left-width: 2px; border-bottom-width: 2px; }
+  .corner.br { right: 12px; bottom: 12px; border-right-width: 2px; border-bottom-width: 2px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(6px); padding: 12px 14px; font-size: 12px; }
+  .panel h2 { margin: 0 0 8px; font-size: 10px; letter-spacing: 0.3em; color: var(--cyan-dim); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn { background: rgba(0, 240, 255, 0.06); color: var(--cyan); border: 1px solid var(--line); padding: 9px 12px; font-size: 12px; letter-spacing: 0.14em; cursor: pointer; min-height: 40px; }
+  .btn:hover, .btn:focus-visible { background: rgba(0, 240, 255, 0.18); outline: none; }
+  .btn[aria-pressed="true"] { background: rgba(0, 240, 255, 0.28); color: #fff; box-shadow: 0 0 12px rgba(0,240,255,0.35) inset; }
+  .btn.warn[aria-pressed="true"] { background: rgba(255,204,0,0.28); border-color: var(--amber); }
+  .btn.big { font-size: 14px; padding: 12px 16px; }
+  .btn kbd { opacity: 0.55; margin-left: 6px; font-size: 10px; }
+
+  #left { left: 22px; top: 84px; width: 250px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 110px); overflow: auto; }
+  #right { right: 22px; top: 84px; width: 300px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 110px); overflow: auto; }
+  #status { font-size: 11px; line-height: 1.7; }
+  #status .ok { color: var(--green); } #status .bad { color: var(--red); } #status .wait { color: var(--amber); }
+
+  #contacts { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto; }
+  #contacts li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 7px 8px; border-bottom: 1px dashed rgba(0,240,255,0.18); cursor: pointer; }
+  #contacts li:hover, #contacts li:focus-visible { background: rgba(0,240,255,0.12); outline: none; }
+  #contacts li.sel { background: rgba(255,51,68,0.16); border-left: 2px solid var(--red); }
+  #contacts li.mil .cs { color: var(--amber); }
+  #contacts .cs { color: #fff; font-weight: 600; letter-spacing: 0.1em; }
+  #contacts .meta { grid-column: 1 / -1; color: var(--cyan-dim); font-size: 10.5px; }
+  #contacts .dist { color: var(--green); }
+
+  #card { display: none; }
+  #card.on { display: block; border-color: var(--red); }
+  #card .cs { font-size: 20px; color: #fff; letter-spacing: 0.18em; font-weight: 700; }
+  #card .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 8px; }
+  #card .grid span { color: var(--cyan-dim); font-size: 10px; letter-spacing: 0.2em; }
+  #card .grid b { color: #e8fbff; font-weight: 600; font-size: 13px; }
+
+  #bottom { left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 10px; align-items: flex-end; }
+  #coords { left: 22px; bottom: 22px; font-size: 12px; letter-spacing: 0.16em; line-height: 1.7; }
+  #coords b { color: #e8fbff; font-weight: 600; }
+  #attrib { right: 22px; bottom: 22px; font-size: 10px; color: rgba(0,240,255,0.55); text-align: right; line-height: 1.5; }
+  #attrib a { color: var(--cyan); }
+
+  input[type="password"], input[type="text"] { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--line); color: #fff; padding: 9px; font-family: var(--mono); font-size: 12px; }
+  #mic[aria-pressed="true"] { border-color: var(--red); color: var(--red); box-shadow: 0 0 16px rgba(255,51,68,0.4); }
+  #heard { font-size: 11px; color: var(--amber); min-height: 16px; }
+  #toast { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--amber); color: var(--amber); padding: 8px 16px; font-size: 12px; letter-spacing: 0.12em; z-index: 9; display: none; }
+
+  body.hud-off .hud, body.hud-off .corner { display: none !important; }
+  @media (max-width: 900px) {
+    #left, #right { width: 200px; }
+    #title h1 { font-size: 18px; }
+    #strip { display: none; }
+  }
+</style>
+</head>
+<body data-style="normal">
+
+<div id="map" aria-label="Live map of planes and ships around Worthing">
+  <div id="tiles"></div>
+  <canvas id="overlay"></canvas>
+</div>
+<div id="scanlines"></div>
+<div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+
+<div id="title" class="hud">
+  <h1>WORTHING <span>SKIES</span></h1>
+  <small>NO PLACE LEFT BEHIND · LIVE ADS-B + AIS</small>
+</div>
+<div id="strip" class="hud">OPEN DATA // PUBLIC SIGNALS // WEST SUSSEX</div>
+<div id="clock" class="hud"><b id="utc">--:--:--Z</b><br /><span id="count">CONTACTS: --</span></div>
+
+<div id="left" class="hud">
+  <div class="panel">
+    <h2>LOCATION</h2>
+    <div class="row" id="places"></div>
+  </div>
+  <div class="panel">
+    <h2>LAYERS</h2>
+    <div class="row">
+      <button class="btn" data-layer="planes" aria-pressed="true">PLANES</button>
+      <button class="btn warn" data-layer="mil" aria-pressed="true">MILITARY</button>
+      <button class="btn" data-layer="ships" aria-pressed="true">SHIPS</button>
+      <button class="btn" data-layer="trails" aria-pressed="true">TRAILS</button>
+      <button class="btn" data-layer="boxes" aria-pressed="true">DETECT <kbd>D</kbd></button>
+      <button class="btn" data-layer="scope" aria-pressed="true">SCOPE</button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>SENSOR</h2>
+    <div class="row">
+      <button class="btn" data-style="normal" aria-pressed="true">NORMAL <kbd>1</kbd></button>
+      <button class="btn" data-style="crt">CRT <kbd>2</kbd></button>
+      <button class="btn" data-style="nvg">NVG <kbd>3</kbd></button>
+      <button class="btn" data-style="flir">FLIR <kbd>4</kbd></button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="basemap" aria-pressed="true">SATELLITE</button>
+      <button class="btn" id="hudtoggle">HUD <kbd>H</kbd></button>
+    </div>
+  </div>
+  <div class="panel" id="status">
+    <h2>FEEDS</h2>
+    <div>PLANES · <span id="s-planes" class="wait">CONNECTING</span></div>
+    <div>SHIPS · <span id="s-ships" class="wait">KEY REQUIRED</span></div>
+    <div>MAP · <span id="s-map" class="wait">LOADING</span></div>
+  </div>
+</div>
+
+<div id="right" class="hud">
+  <div class="panel" id="card">
+    <h2>TRACKED CONTACT</h2>
+    <div class="cs" id="c-cs">—</div>
+    <div class="grid">
+      <div><span>TYPE</span><br /><b id="c-type">—</b></div>
+      <div><span>REG</span><br /><b id="c-reg">—</b></div>
+      <div><span>ALT</span><br /><b id="c-alt">—</b></div>
+      <div><span>SPEED</span><br /><b id="c-spd">—</b></div>
+      <div><span>HEADING</span><br /><b id="c-hdg">—</b></div>
+      <div><span>FROM PIER</span><br /><b id="c-dist">—</b></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="follow" aria-pressed="false">FOLLOW <kbd>C</kbd></button>
+      <button class="btn" id="unselect">RELEASE <kbd>ESC</kbd></button>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>CONTACTS · NEAREST TO VIEW</h2>
+    <ul id="contacts"></ul>
+  </div>
+  <div class="panel">
+    <h2>SHIPS KEY (FREE · AISSTREAM.IO)</h2>
+    <input type="password" id="aiskey" placeholder="Paste AISstream API key" autocomplete="off" />
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="savekey">SAVE + CONNECT</button>
+      <button class="btn" id="clearkey">CLEAR</button>
+    </div>
+  </div>
+</div>
+
+<div id="bottom" class="hud">
+  <button class="btn big" id="zoomout" aria-label="Zoom out">−</button>
+  <button class="btn big" id="mic" aria-pressed="false" title="Voice: 'go to the airport', 'follow nearest', 'zoom in', 'night vision'">● MIC</button>
+  <button class="btn big" id="nearest">FOLLOW NEAREST</button>
+  <button class="btn big" id="zoomin" aria-label="Zoom in">+</button>
+</div>
+<div id="coords" class="hud"><b id="ll">—</b><br /><span id="heard"></span></div>
+<div id="attrib" class="hud">
+  Planes: <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> / <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a> · Ships: <a href="https://aisstream.io" target="_blank" rel="noopener">AISstream</a><br />
+  Map: <span id="attr-map">Esri World Imagery</span> · Inspired by <a href="https://github.com/bilawalsidhu/gods-eye-view" target="_blank" rel="noopener">God's Eye View</a>
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+  // ------------------------------------------------------------------ places
+  const PIER = { lat: 50.8092, lon: -0.3701 };
+  const PLACES = [
+    { name: 'WORTHING PIER', lat: 50.8092, lon: -0.3701, z: 12, key: 'pier' },
+    { name: 'SHOREHAM AIRPORT', lat: 50.8356, lon: -0.2972, z: 13, key: 'airport' },
+    { name: 'SHOREHAM HARBOUR', lat: 50.8290, lon: -0.2450, z: 13, key: 'harbour' },
+    { name: 'RAMPION WIND FARM', lat: 50.6650, lon: -0.2700, z: 11, key: 'wind' },
+    { name: 'GATWICK', lat: 51.1537, lon: -0.1821, z: 12, key: 'gatwick' },
+    { name: 'THE CHANNEL', lat: 50.55, lon: -0.30, z: 9, key: 'channel' },
+  ];
+
+  // ------------------------------------------------------------------ map core (no libraries)
+  const TILE = 256;
+  const BASEMAPS = {
+    sat: { name: 'SATELLITE', attr: 'Esri World Imagery',
+      url: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`, max: 18 },
+    dark: { name: 'DARK MAP', attr: '© OpenStreetMap contributors © CARTO',
+      url: (z, x, y) => `https://${['a','b','c'][(x + y) % 3]}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`, max: 18 },
+  };
+  const view = { lat: PIER.lat, lon: PIER.lon, z: 12, basemap: 'sat' };
+  const mapEl = document.getElementById('map');
+  const tilesEl = document.getElementById('tiles');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+  const tileCache = new Map();
+  let tilesLoaded = 0, tilesFailed = 0;
+
+  const clampLat = (lat) => Math.max(-85.05, Math.min(85.05, lat));
+  function project(lat, lon, z) { // world pixel coords
+    const n = TILE * Math.pow(2, z);
+    const x = (lon + 180) / 360 * n;
+    const s = Math.sin(lat * Math.PI / 180);
+    const y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+    return { x, y };
+  }
+  function unproject(x, y, z) {
+    const n = TILE * Math.pow(2, z);
+    const lon = x / n * 360 - 180;
+    const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI;
+    return { lat, lon };
+  }
+  function toScreen(lat, lon) {
+    const c = project(view.lat, view.lon, view.z);
+    const p = project(lat, lon, view.z);
+    return { x: W / 2 + (p.x - c.x), y: H / 2 + (p.y - c.y) };
+  }
+  function screenToLL(sx, sy) {
+    const c = project(view.lat, view.lon, view.z);
+    return unproject(c.x + (sx - W / 2), c.y + (sy - H / 2), view.z);
+  }
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = mapEl.clientWidth; H = mapEl.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    renderTiles(); draw();
+  }
+
+  function renderTiles() {
+    const bm = BASEMAPS[view.basemap];
+    const z = Math.min(view.z, bm.max);
+    const c = project(view.lat, view.lon, z);
+    const n = Math.pow(2, z);
+    const x0 = Math.floor((c.x - W / 2) / TILE), x1 = Math.floor((c.x + W / 2) / TILE);
+    const y0 = Math.floor((c.y - H / 2) / TILE), y1 = Math.floor((c.y + H / 2) / TILE);
+    const wanted = new Set();
+    for (let tx = x0; tx <= x1; tx++) for (let ty = y0; ty <= y1; ty++) {
+      if (ty < 0 || ty >= n) continue;
+      const wx = ((tx % n) + n) % n;
+      const key = `${view.basemap}/${z}/${wx}/${ty}`;
+      wanted.add(key);
+      let img = tileCache.get(key);
+      if (!img) {
+        img = new Image();
+        img.decoding = 'async';
+        img.addEventListener('load', () => { tilesLoaded++; feed('map', 'ok', bm.name + ' ' + z); }, { once: true });
+        img.addEventListener('error', () => { tilesFailed++; if (tilesLoaded === 0) feed('map', 'bad', 'TILES BLOCKED · CHECK INTERNET'); }, { once: true });
+        img.src = bm.url(z, wx, ty);
+        tileCache.set(key, img);
+      }
+      img.style.left = (W / 2 + tx * TILE - c.x) + 'px';
+      img.style.top = (H / 2 + ty * TILE - c.y) + 'px';
+      if (img.parentNode !== tilesEl) tilesEl.appendChild(img);
+    }
+    for (const img of [...tilesEl.children]) {
+      let keep = false;
+      for (const k of wanted) if (tileCache.get(k) === img) { keep = true; break; }
+      if (!keep) img.remove();
+    }
+    if (tileCache.size > 600) { for (const k of [...tileCache.keys()].slice(0, 200)) { const im = tileCache.get(k); if (!im.parentNode) tileCache.delete(k); } }
+  }
+
+  // drag + wheel
+  let drag = null;
+  mapEl.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; mapEl.setPointerCapture(e.pointerId); mapEl.classList.add('dragging'); });
+  mapEl.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    drag.x = e.clientX; drag.y = e.clientY;
+    const c = project(view.lat, view.lon, view.z);
+    const ll = unproject(c.x - dx, c.y - dy, view.z);
+    view.lat = clampLat(ll.lat); view.lon = ll.lon;
+    stopFollow();
+    renderTiles(); draw(); updateCoords();
+  });
+  const endDrag = (e) => {
+    if (!drag) return;
+    if (!drag.moved) pick(e.clientX, e.clientY);
+    drag = null; mapEl.classList.remove('dragging');
+  };
+  mapEl.addEventListener('pointerup', endDrag);
+  mapEl.addEventListener('pointercancel', () => { drag = null; mapEl.classList.remove('dragging'); });
+  mapEl.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY); }, { passive: false });
+  function zoomBy(delta, sx = W / 2, sy = H / 2) {
+    const nz = Math.max(5, Math.min(18, view.z + delta));
+    if (nz === view.z) return;
+    const under = screenToLL(sx, sy);
+    view.z = nz;
+    // keep the point under the cursor fixed
+    const p = project(under.lat, under.lon, nz);
+    const c = unproject(p.x - (sx - W / 2), p.y - (sy - H / 2), nz);
+    view.lat = clampLat(c.lat); view.lon = c.lon;
+    renderTiles(); draw(); updateCoords(); scheduleFetch(300);
+  }
+  function flyTo(lat, lon, z) {
+    const from = { lat: view.lat, lon: view.lon, z: view.z };
+    const t0 = performance.now(), dur = 900;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur), e = k < 0.5 ? 2 * k * k : -1 + (4 - 2 * k) * k;
+      view.lat = from.lat + (lat - from.lat) * e; view.lon = from.lon + (lon - from.lon) * e;
+      view.z = Math.round(from.z + (z - from.z) * e);
+      renderTiles(); draw(); updateCoords();
+      if (k < 1) requestAnimationFrame(step); else scheduleFetch(100);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ------------------------------------------------------------------ data
+  const layers = { planes: true, mil: true, ships: true, trails: true, boxes: true, scope: true };
+  const aircraft = new Map(); // hex -> {…, trail: [[lat,lon],…]}
+  const ships = new Map();    // mmsi -> {…}
+  let selected = null, following = false, lastFetchOk = 0;
+  const PLANE_SOURCES = [
+    { name: 'adsb.lol', url: (la, lo, r) => `https://api.adsb.lol/v2/point/${la.toFixed(3)}/${lo.toFixed(3)}/${r}` },
+    { name: 'airplanes.live', url: (la, lo, r) => `https://api.airplanes.live/v2/point/${la.toFixed(3)}/${lo.toFixed(3)}/${r}` },
+    { name: 'adsb.fi', url: (la, lo, r) => `https://opendata.adsb.fi/api/v2/lat/${la.toFixed(3)}/lon/${lo.toFixed(3)}/dist/${r}` },
+  ];
+  let sourceIdx = 0, fetchTimer = null, inflight = false;
+
+  async function fetchPlanes() {
+    if (inflight || !layers.planes && !layers.mil) return;
+    inflight = true;
+    const radiusNm = Math.max(40, Math.min(250, Math.round(180 / Math.pow(2, view.z - 9))));
+    let ok = false;
+    for (let attempt = 0; attempt < PLANE_SOURCES.length && !ok; attempt++) {
+      const src = PLANE_SOURCES[(sourceIdx + attempt) % PLANE_SOURCES.length];
+      try {
+        const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 8000);
+        const res = await fetch(src.url(view.lat, view.lon, radiusNm), { signal: ctl.signal, cache: 'no-store' });
+        clearTimeout(to);
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        ingestPlanes(data.ac || data.aircraft || []);
+        sourceIdx = (sourceIdx + attempt) % PLANE_SOURCES.length;
+        feed('planes', 'ok', `LIVE · ${src.name} · ${radiusNm} NM`);
+        lastFetchOk = Date.now(); ok = true;
+      } catch (err) { /* try the next source */ }
+    }
+    if (!ok) feed('planes', 'bad', 'NO FEED · CHECK INTERNET');
+    inflight = false;
+    draw(); renderContacts();
+  }
+  function ingestPlanes(list) {
+    const now = Date.now(), seen = new Set();
+    for (const a of list) {
+      if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon)) continue;
+      const hex = a.hex || a.r || a.flight; if (!hex) continue;
+      seen.add(hex);
+      const prev = aircraft.get(hex) || { trail: [] };
+      const alt = a.alt_baro === 'ground' ? 0 : (Number.isFinite(a.alt_baro) ? a.alt_baro : (Number.isFinite(a.alt_geom) ? a.alt_geom : null));
+      const mil = Boolean((a.dbFlags || 0) & 1);
+      const rec = {
+        hex, lat: a.lat, lon: a.lon, alt, gs: Number.isFinite(a.gs) ? a.gs : null,
+        track: Number.isFinite(a.track) ? a.track : (Number.isFinite(a.true_heading) ? a.true_heading : null),
+        flight: (a.flight || '').trim() || (a.r || '').trim() || hex.toUpperCase(),
+        reg: (a.r || '').trim() || '—', type: (a.t || '').trim() || '—', desc: a.desc || '', mil,
+        ground: a.alt_baro === 'ground', seen: now, trail: prev.trail,
+      };
+      const last = rec.trail[rec.trail.length - 1];
+      if (!last || Math.abs(last[0] - rec.lat) > 1e-4 || Math.abs(last[1] - rec.lon) > 1e-4) rec.trail.push([rec.lat, rec.lon]);
+      if (rec.trail.length > 90) rec.trail.shift();
+      aircraft.set(hex, rec);
+    }
+    for (const [hex, a] of aircraft) if (!seen.has(hex) && now - a.seen > 45000) aircraft.delete(hex);
+    if (selected && selected.kind === 'plane' && !aircraft.has(selected.id)) stopFollow();
+  }
+  function scheduleFetch(ms) { clearTimeout(fetchTimer); fetchTimer = setTimeout(fetchPlanes, ms); }
+  setInterval(() => { if (!document.hidden) fetchPlanes(); }, 4000);
+
+  // ---- ships via AISstream websocket (free key)
+  let ws = null, wsBox = null;
+  function connectShips() {
+    const key = localStorage.getItem('ws-aiskey') || '';
+    if (ws) { try { ws.close(); } catch {} ws = null; }
+    if (!key) { feed('ships', 'wait', 'KEY REQUIRED · aisstream.io'); return; }
+    feed('ships', 'wait', 'CONNECTING');
+    try {
+      ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+    } catch (e) { feed('ships', 'bad', 'WEBSOCKET BLOCKED'); return; }
+    ws.addEventListener('open', () => {
+      wsBox = [[view.lat - 1.2, view.lon - 2.0], [view.lat + 1.2, view.lon + 2.0]];
+      ws.send(JSON.stringify({ APIKey: key, BoundingBoxes: [wsBox], FilterMessageTypes: ['PositionReport'] }));
+      feed('ships', 'ok', 'LIVE · AISSTREAM');
+    });
+    ws.addEventListener('message', async (ev) => {
+      try {
+        const txt = typeof ev.data === 'string' ? ev.data : await ev.data.text();
+        const m = JSON.parse(txt);
+        if (m.error) { feed('ships', 'bad', String(m.error).slice(0, 40)); return; }
+        const md = m.MetaData || {}, pr = (m.Message && m.Message.PositionReport) || {};
+        if (!Number.isFinite(md.latitude) || !Number.isFinite(md.longitude)) return;
+        const id = String(md.MMSI || pr.UserID || '');
+        if (!id) return;
+        const prev = ships.get(id) || { trail: [] };
+        const rec = { id, lat: md.latitude, lon: md.longitude, name: (md.ShipName || '').trim() || `MMSI ${id}`,
+          sog: Number.isFinite(pr.Sog) ? pr.Sog : null, cog: Number.isFinite(pr.Cog) ? pr.Cog : null,
+          hdg: Number.isFinite(pr.TrueHeading) && pr.TrueHeading < 360 ? pr.TrueHeading : null, seen: Date.now(), trail: prev.trail };
+        const last = rec.trail[rec.trail.length - 1];
+        if (!last || Math.abs(last[0] - rec.lat) > 2e-4 || Math.abs(last[1] - rec.lon) > 2e-4) rec.trail.push([rec.lat, rec.lon]);
+        if (rec.trail.length > 60) rec.trail.shift();
+        ships.set(id, rec);
+      } catch {}
+    });
+    ws.addEventListener('close', () => { if (ws) feed('ships', 'wait', 'RECONNECTING'); setTimeout(() => { if (layers.ships) connectShips(); }, 5000); });
+    ws.addEventListener('error', () => feed('ships', 'bad', 'FEED ERROR · CHECK KEY'));
+  }
+  setInterval(() => { const now = Date.now(); for (const [id, s] of ships) if (now - s.seen > 20 * 60000) ships.delete(id); }, 60000);
+
+  // ------------------------------------------------------------------ drawing
+  const kmBetween = (a, b) => {
+    const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLon = (b.lon - a.lon) * Math.PI / 180;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  };
+  const styleColor = () => ({ normal: '#00f0ff', crt: '#7ff7ff', nvg: '#9dff9d', flir: '#ffffff' })[document.body.dataset.style] || '#00f0ff';
+
+  function planeGlyph(x, y, angle, color, size) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(((angle || 0) - 90) * Math.PI / 180);
+    ctx.fillStyle = color; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(size, 0); ctx.lineTo(-size * 0.35, size * 0.55); ctx.lineTo(-size * 0.7, size * 0.18);
+    ctx.lineTo(-size * 0.55, 0); ctx.lineTo(-size * 0.7, -size * 0.18); ctx.lineTo(-size * 0.35, -size * 0.55);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // wings
+    ctx.beginPath(); ctx.moveTo(size * 0.15, 0); ctx.lineTo(-size * 0.25, size); ctx.lineTo(-size * 0.4, size); ctx.lineTo(-size * 0.15, 0);
+    ctx.lineTo(-size * 0.4, -size); ctx.lineTo(-size * 0.25, -size); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  function shipGlyph(x, y, angle, color, size) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(((angle || 0) - 90) * Math.PI / 180);
+    ctx.fillStyle = color; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(size, 0); ctx.lineTo(0, size * 0.55); ctx.lineTo(-size * 0.8, size * 0.55); ctx.lineTo(-size * 0.8, -size * 0.55); ctx.lineTo(0, -size * 0.55); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  function bracketBox(x, y, r, color) {
+    const l = Math.max(4, r * 0.4);
+    ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x - r, y - r + l); ctx.lineTo(x - r, y - r); ctx.lineTo(x - r + l, y - r);
+    ctx.moveTo(x + r - l, y - r); ctx.lineTo(x + r, y - r); ctx.lineTo(x + r, y - r + l);
+    ctx.moveTo(x + r, y + r - l); ctx.lineTo(x + r, y + r); ctx.lineTo(x + r - l, y + r);
+    ctx.moveTo(x - r + l, y + r); ctx.lineTo(x - r, y + r); ctx.lineTo(x - r, y + r - l);
+    ctx.stroke();
+  }
+  function label(text, x, y, color) {
+    ctx.font = '600 10.5px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    const w = ctx.measureText(text).width;
+    ctx.fillRect(x - 3, y - 10, w + 6, 13);
+    ctx.fillStyle = color; ctx.fillText(text, x, y);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const accent = styleColor();
+    const dense = view.z >= 10;
+    // trails
+    if (layers.trails) {
+      ctx.lineWidth = 1.2;
+      const drawTrail = (trail, color) => {
+        if (trail.length < 2) return;
+        for (let i = 1; i < trail.length; i++) {
+          const a = toScreen(trail[i - 1][0], trail[i - 1][1]), b = toScreen(trail[i][0], trail[i][1]);
+          ctx.strokeStyle = color; ctx.globalAlpha = 0.15 + 0.85 * (i / trail.length);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      };
+      if (layers.ships) for (const s of ships.values()) drawTrail(s.trail, '#39c6ff');
+      for (const a of aircraft.values()) {
+        if (a.mil ? !layers.mil : !layers.planes) continue;
+        drawTrail(a.trail, a.mil ? '#ffcc00' : '#ffffff');
+      }
+    }
+    // ships
+    if (layers.ships) for (const s of ships.values()) {
+      const p = toScreen(s.lat, s.lon);
+      if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
+      const sel = selected && selected.kind === 'ship' && selected.id === s.id;
+      shipGlyph(p.x, p.y, s.hdg ?? s.cog ?? 0, sel ? '#ff3344' : '#39c6ff', dense ? 7 : 5);
+      if (layers.boxes && (dense || sel)) bracketBox(p.x, p.y, 12, sel ? '#ff3344' : 'rgba(57,198,255,0.8)');
+      if (dense || sel) label(s.name.slice(0, 18), p.x + 14, p.y - 8, sel ? '#ff3344' : '#9fe3ff');
+    }
+    // aircraft
+    for (const a of aircraft.values()) {
+      if (a.mil ? !layers.mil : !layers.planes) continue;
+      const p = toScreen(a.lat, a.lon);
+      if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
+      const sel = selected && selected.kind === 'plane' && selected.id === a.hex;
+      const color = sel ? '#ff3344' : (a.mil ? '#ffcc00' : '#ffffff');
+      planeGlyph(p.x, p.y, a.track, color, a.ground ? 5 : (dense ? 8 : 6));
+      if (layers.boxes && (dense || sel || a.mil)) bracketBox(p.x, p.y, 14, sel ? '#ff3344' : (a.mil ? 'rgba(255,204,0,0.85)' : accent));
+      if (dense || sel || a.mil) {
+        const alt = a.alt == null ? '' : (a.ground ? ' GND' : ' FL' + String(Math.round(a.alt / 100)).padStart(3, '0'));
+        label(a.flight + alt, p.x + 16, p.y - 10, sel ? '#ff3344' : (a.mil ? '#ffcc00' : '#e8fbff'));
+      }
+    }
+    // scope mask + reticle
+    if (layers.scope) {
+      const r = Math.min(W, H) * 0.47;
+      const g = ctx.createRadialGradient(W / 2, H / 2, r * 0.82, W / 2, H / 2, r * 1.06);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.88)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(0,240,255,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, r * 0.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,240,255,0.45)';
+      ctx.beginPath(); ctx.moveTo(W / 2 - 18, H / 2); ctx.lineTo(W / 2 + 18, H / 2); ctx.moveTo(W / 2, H / 2 - 18); ctx.lineTo(W / 2, H / 2 + 18); ctx.stroke();
+      for (let i = 0; i < 36; i++) {
+        const t = i * Math.PI / 18, len = i % 3 === 0 ? 10 : 5;
+        ctx.beginPath(); ctx.moveTo(W / 2 + Math.cos(t) * (r - len), H / 2 + Math.sin(t) * (r - len)); ctx.lineTo(W / 2 + Math.cos(t) * r, H / 2 + Math.sin(t) * r); ctx.stroke();
+      }
+    }
+    // pier marker
+    const pp = toScreen(PIER.lat, PIER.lon);
+    ctx.strokeStyle = '#00ff66'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(pp.x, pp.y, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pp.x - 10, pp.y); ctx.lineTo(pp.x + 10, pp.y); ctx.moveTo(pp.x, pp.y - 10); ctx.lineTo(pp.x, pp.y + 10); ctx.stroke();
+    if (view.z >= 11) label('WORTHING PIER · HOME', pp.x + 12, pp.y - 8, '#00ff66');
+    updateCount();
+  }
+
+  // ------------------------------------------------------------------ selection / follow
+  function pick(sx, sy) {
+    let best = null, bestD = 22;
+    for (const a of aircraft.values()) {
+      if (a.mil ? !layers.mil : !layers.planes) continue;
+      const p = toScreen(a.lat, a.lon), d = Math.hypot(p.x - sx, p.y - sy);
+      if (d < bestD) { bestD = d; best = { kind: 'plane', id: a.hex }; }
+    }
+    if (layers.ships) for (const s of ships.values()) {
+      const p = toScreen(s.lat, s.lon), d = Math.hypot(p.x - sx, p.y - sy);
+      if (d < bestD) { bestD = d; best = { kind: 'ship', id: s.id }; }
+    }
+    if (best) select(best); else stopFollow(true);
+  }
+  function select(target, follow = false) {
+    selected = target; following = follow;
+    document.getElementById('follow').setAttribute('aria-pressed', String(following));
+    renderCard(); renderContacts(); draw();
+  }
+  function stopFollow(clear = false) {
+    following = false;
+    document.getElementById('follow').setAttribute('aria-pressed', 'false');
+    if (clear) { selected = null; renderCard(); renderContacts(); draw(); }
+  }
+  function selectedRecord() {
+    if (!selected) return null;
+    return selected.kind === 'plane' ? aircraft.get(selected.id) : ships.get(selected.id);
+  }
+  function renderCard() {
+    const card = document.getElementById('card'), rec = selectedRecord();
+    if (!rec) { card.classList.remove('on'); return; }
+    card.classList.add('on');
+    const set = (id, v) => { document.getElementById(id).textContent = v; };
+    if (selected.kind === 'plane') {
+      set('c-cs', rec.flight); set('c-type', rec.type + (rec.mil ? ' · MIL' : '')); set('c-reg', rec.reg);
+      set('c-alt', rec.alt == null ? '—' : rec.ground ? 'GROUND' : Math.round(rec.alt).toLocaleString() + ' ft');
+      set('c-spd', rec.gs == null ? '—' : Math.round(rec.gs) + ' kt'); set('c-hdg', rec.track == null ? '—' : Math.round(rec.track) + '°');
+    } else {
+      set('c-cs', rec.name); set('c-type', 'VESSEL'); set('c-reg', 'MMSI ' + rec.id);
+      set('c-alt', 'SEA LEVEL'); set('c-spd', rec.sog == null ? '—' : rec.sog.toFixed(1) + ' kt'); set('c-hdg', (rec.hdg ?? rec.cog) == null ? '—' : Math.round(rec.hdg ?? rec.cog) + '°');
+    }
+    set('c-dist', kmBetween(rec, PIER).toFixed(1) + ' km');
+  }
+  function renderContacts() {
+    const ul = document.getElementById('contacts');
+    const centre = { lat: view.lat, lon: view.lon };
+    const rows = [];
+    for (const a of aircraft.values()) { if (a.mil ? !layers.mil : !layers.planes) continue; rows.push({ kind: 'plane', id: a.hex, rec: a, d: kmBetween(a, centre) }); }
+    if (layers.ships) for (const s of ships.values()) rows.push({ kind: 'ship', id: s.id, rec: s, d: kmBetween(s, centre) });
+    rows.sort((x, y) => x.d - y.d);
+    ul.innerHTML = '';
+    for (const r of rows.slice(0, 14)) {
+      const li = document.createElement('li'); li.tabIndex = 0;
+      const isSel = selected && selected.kind === r.kind && selected.id === r.id;
+      if (isSel) li.classList.add('sel');
+      if (r.kind === 'plane' && r.rec.mil) li.classList.add('mil');
+      const title = r.kind === 'plane' ? r.rec.flight : '⚓ ' + r.rec.name;
+      const meta = r.kind === 'plane'
+        ? `${r.rec.type} · ${r.rec.alt == null ? '—' : r.rec.ground ? 'GND' : Math.round(r.rec.alt) + ' ft'} · ${r.rec.gs == null ? '—' : Math.round(r.rec.gs) + ' kt'}`
+        : `VESSEL · ${r.rec.sog == null ? '—' : r.rec.sog.toFixed(1) + ' kt'}`;
+      li.innerHTML = `<span class="cs"></span><span class="dist"></span><span class="meta"></span>`;
+      li.querySelector('.cs').textContent = title; li.querySelector('.dist').textContent = r.d.toFixed(0) + ' km'; li.querySelector('.meta').textContent = meta;
+      const go = () => { select({ kind: r.kind, id: r.id }, true); flyTo(r.rec.lat, r.rec.lon, Math.max(view.z, 11)); };
+      li.addEventListener('click', go); li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+      ul.appendChild(li);
+    }
+    if (!rows.length) { const li = document.createElement('li'); li.innerHTML = '<span class="meta">Waiting for contacts…</span>'; ul.appendChild(li); }
+  }
+  function followNearest() {
+    let best = null, bestD = Infinity;
+    for (const a of aircraft.values()) { if (a.ground || (a.mil ? !layers.mil : !layers.planes)) continue; const d = kmBetween(a, { lat: view.lat, lon: view.lon }); if (d < bestD) { bestD = d; best = a; } }
+    if (!best) { toast('NO AIRBORNE CONTACTS YET'); return; }
+    select({ kind: 'plane', id: best.hex }, true); flyTo(best.lat, best.lon, Math.max(view.z, 11));
+    toast('FOLLOWING ' + best.flight);
+  }
+  // follow loop: keep the tracked contact centred with light easing
+  setInterval(() => {
+    if (!following) return;
+    const rec = selectedRecord(); if (!rec) return;
+    view.lat += (rec.lat - view.lat) * 0.25; view.lon += (rec.lon - view.lon) * 0.25;
+    renderTiles(); draw(); updateCoords(); renderCard();
+  }, 250);
+
+  // ------------------------------------------------------------------ HUD helpers
+  function feed(id, cls, text) { const el = document.getElementById('s-' + id); el.className = cls; el.textContent = text; }
+  function updateCoords() {
+    const fmt = (v, pos, neg) => { const a = Math.abs(v), d = Math.floor(a), m = Math.floor((a - d) * 60), s = ((a - d) * 3600 - m * 60).toFixed(1); return `${d}°${String(m).padStart(2, '0')}'${String(s).padStart(4, '0')}"${v >= 0 ? pos : neg}`; };
+    document.getElementById('ll').textContent = `${fmt(view.lat, 'N', 'S')}  ${fmt(view.lon, 'E', 'W')}  Z${view.z}`;
+  }
+  function updateCount() {
+    let n = 0, m = 0; for (const a of aircraft.values()) { if (a.mil) m++; else n++; }
+    document.getElementById('count').textContent = `CONTACTS: ${n} AIR · ${m} MIL · ${ships.size} SEA`;
+  }
+  setInterval(() => { document.getElementById('utc').textContent = new Date().toISOString().slice(11, 19) + 'Z'; }, 1000);
+  let toastTimer = null;
+  function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2200); }
+
+  // places
+  const placesEl = document.getElementById('places');
+  for (const p of PLACES) {
+    const b = document.createElement('button'); b.className = 'btn'; b.textContent = p.name; b.dataset.place = p.key;
+    b.addEventListener('click', () => { stopFollow(); flyTo(p.lat, p.lon, p.z); toast(p.name); });
+    placesEl.appendChild(b);
+  }
+  const goPlace = (key) => { const p = PLACES.find((x) => x.key === key); if (p) { stopFollow(); flyTo(p.lat, p.lon, p.z); toast(p.name); } };
+
+  // layers
+  for (const b of document.querySelectorAll('[data-layer]')) b.addEventListener('click', () => setLayer(b.dataset.layer, b.getAttribute('aria-pressed') !== 'true'));
+  function setLayer(name, on) {
+    layers[name] = on;
+    const b = document.querySelector(`[data-layer="${name}"]`); if (b) b.setAttribute('aria-pressed', String(on));
+    if (name === 'ships') { if (on) connectShips(); else if (ws) { const w = ws; ws = null; w.close(); feed('ships', 'wait', 'OFF'); } }
+    if (name === 'planes' || name === 'mil') scheduleFetch(50);
+    draw(); renderContacts();
+  }
+  // styles
+  for (const b of document.querySelectorAll('[data-style]')) b.addEventListener('click', () => setStyle(b.dataset.style));
+  function setStyle(s) {
+    document.body.dataset.style = s;
+    for (const b of document.querySelectorAll('[data-style]')) b.setAttribute('aria-pressed', String(b.dataset.style === s));
+    draw();
+  }
+  document.getElementById('basemap').addEventListener('click', () => {
+    view.basemap = view.basemap === 'sat' ? 'dark' : 'sat';
+    const bm = BASEMAPS[view.basemap];
+    document.getElementById('basemap').textContent = bm.name; document.getElementById('attr-map').textContent = bm.attr;
+    tilesEl.innerHTML = ''; renderTiles();
+  });
+  document.getElementById('hudtoggle').addEventListener('click', () => document.body.classList.toggle('hud-off'));
+  document.getElementById('zoomin').addEventListener('click', () => zoomBy(1));
+  document.getElementById('zoomout').addEventListener('click', () => zoomBy(-1));
+  document.getElementById('nearest').addEventListener('click', followNearest);
+  document.getElementById('follow').addEventListener('click', () => { if (!selected) return; following = !following; document.getElementById('follow').setAttribute('aria-pressed', String(following)); });
+  document.getElementById('unselect').addEventListener('click', () => stopFollow(true));
+  // ships key
+  const keyInput = document.getElementById('aiskey');
+  keyInput.value = localStorage.getItem('ws-aiskey') || '';
+  document.getElementById('savekey').addEventListener('click', () => { localStorage.setItem('ws-aiskey', keyInput.value.trim()); setLayer('ships', true); toast('SHIPS KEY SAVED'); });
+  document.getElementById('clearkey').addEventListener('click', () => { localStorage.removeItem('ws-aiskey'); keyInput.value = ''; setLayer('ships', false); feed('ships', 'wait', 'KEY REQUIRED · aisstream.io'); });
+
+  // keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    const k = e.key.toLowerCase();
+    if (k === '1') setStyle('normal'); else if (k === '2') setStyle('crt'); else if (k === '3') setStyle('nvg'); else if (k === '4') setStyle('flir');
+    else if (k === 'h') document.body.classList.toggle('hud-off');
+    else if (k === 'd') setLayer('boxes', !layers.boxes);
+    else if (k === 'c') { if (selected) { following = !following; document.getElementById('follow').setAttribute('aria-pressed', String(following)); } else followNearest(); }
+    else if (k === 'escape') { if (document.body.classList.contains('hud-off')) document.body.classList.remove('hud-off'); else stopFollow(true); }
+    else if (k === '+' || k === '=') zoomBy(1); else if (k === '-' || k === '_') zoomBy(-1);
+    else if (k === 'q') goPlace('pier'); else if (k === 'w') goPlace('airport'); else if (k === 'e') goPlace('harbour'); else if (k === 'r') goPlace('wind'); else if (k === 't') goPlace('gatwick');
+    else if (k === 'm') toggleMic();
+  });
+
+  // ------------------------------------------------------------------ voice (Chrome / Edge)
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, micOn = false;
+  const micBtn = document.getElementById('mic'), heard = document.getElementById('heard');
+  function toggleMic() {
+    if (!SR) { toast('VOICE NEEDS CHROME OR EDGE'); return; }
+    micOn = !micOn; micBtn.setAttribute('aria-pressed', String(micOn));
+    if (!micOn) { if (rec) rec.stop(); heard.textContent = ''; return; }
+    rec = new SR(); rec.lang = 'en-GB'; rec.continuous = true; rec.interimResults = false;
+    rec.onresult = (ev) => { const t = ev.results[ev.results.length - 1][0].transcript.trim().toLowerCase(); heard.textContent = '🎙 ' + t; voiceCommand(t); };
+    rec.onend = () => { if (micOn) { try { rec.start(); } catch {} } };
+    rec.onerror = (ev) => { heard.textContent = 'MIC: ' + ev.error; };
+    try { rec.start(); toast('LISTENING · say "go to the airport"'); } catch { toast('MIC BLOCKED'); }
+  }
+  micBtn.addEventListener('click', toggleMic);
+  function voiceCommand(t) {
+    const has = (...w) => w.some((x) => t.includes(x));
+    if (has('pier', 'home', 'worthing')) return goPlace('pier');
+    if (has('airport', 'shoreham air', 'runway')) return goPlace('airport');
+    if (has('harbour', 'harbor', 'port')) return goPlace('harbour');
+    if (has('wind farm', 'rampion', 'turbine')) return goPlace('wind');
+    if (has('gatwick')) return goPlace('gatwick');
+    if (has('channel', 'sea view', 'ships view')) return goPlace('channel');
+    if (has('zoom in', 'closer')) return zoomBy(1);
+    if (has('zoom out', 'back out', 'wider')) return zoomBy(-1);
+    if (has('night vision', 'nvg')) return setStyle('nvg');
+    if (has('thermal', 'flir', 'heat')) return setStyle('flir');
+    if (has('crt', 'retro')) return setStyle('crt');
+    if (has('normal', 'clear view', 'reset view')) return setStyle('normal');
+    if (has('follow', 'track', 'nearest')) return followNearest();
+    if (has('release', 'stop following', 'let go')) return stopFollow(true);
+    if (has('planes off', 'hide planes')) return setLayer('planes', false);
+    if (has('planes on', 'show planes')) return setLayer('planes', true);
+    if (has('ships off', 'hide ships')) return setLayer('ships', false);
+    if (has('ships on', 'show ships')) return setLayer('ships', true);
+    if (has('boxes', 'detection')) return setLayer('boxes', !layers.boxes);
+    if (has('hide hud', 'clean view')) return document.body.classList.add('hud-off');
+    if (has('show hud')) return document.body.classList.remove('hud-off');
+    if (has('scope')) return setLayer('scope', !layers.scope);
+    toast('NOT UNDERSTOOD · try "go to the airport"');
+  }
+
+  // ------------------------------------------------------------------ boot
+  window.addEventListener('resize', resize);
+  resize(); updateCoords(); renderContacts();
+  fetchPlanes();
+  if (localStorage.getItem('ws-aiskey')) connectShips(); else feed('ships', 'wait', 'KEY REQUIRED · aisstream.io (free)');
+  window.__worthingSkies = { view, aircraft, ships, ingestPlanes, draw, renderContacts, setStyle, select };
+})();
+</script>
+</body>
+</html>
