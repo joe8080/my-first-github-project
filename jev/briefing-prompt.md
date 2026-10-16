@@ -19,8 +19,10 @@ must be short, voice-friendly and need no clicks to understand. Write it to be r
 3. **Markets** — the latest "Market Today" email from GuruFocus (or any market-close newsletter
    from the last 24h). Pull: Dow, S&P 500, Nasdaq, 10-year yield, Bitcoin, and any headline
    about AI/chips, hyperscalers, crypto miners, or Joe's holdings.
-4. **Holdings watchlist** — Google Sheet "Portfolio_Valuation_Screen_Jun2026" (Summary tab):
-   note any headline that touches a ticker in that list.
+4. **Holdings watchlist** (listed inline so no sheet lookup is needed) — MSFT, NVDA, META,
+   AMZN, GOOGL, ASML, NOW, AMD, ARM, ANET, MU, MRVL, CRDO, VRT, ETN, CEG, MOD, IOT, HUBS,
+   KVYO, BRZE, INOD, NBIS, IREN, WULF, CIFR, MARA, GLXY, RGTI, OKLO, SERV; dividend names
+   MA, V, AVGO, AAPL, KO, PEP, PG, JNJ, MCD, JPM, O. Note any headline touching these.
 
 ## Write the briefing
 
@@ -45,7 +47,7 @@ for anything mentioned, so Joe can tap through if he wants.
 ## Deliver
 
 Send it with Gmail **to Joe's own address only** (the connected Gmail account itself).
-Never send to anyone else.
+Never send to anyone else. Skip if today's briefing was already sent.
 
 ## Hard rules
 
