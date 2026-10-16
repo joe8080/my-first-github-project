@@ -37,6 +37,20 @@ Talk to Claude (voice mode or dictation) and start with "JEV":
 The commands live in [`skill/jev/SKILL.md`](skill/jev/SKILL.md).
 To install: upload `jev-skill.zip` in claude.ai under Settings → Capabilities → Skills.
 
+## Mary Jane — talk to JEV out loud
+
+Mary Jane is JEV's voice: a female ElevenLabs voice agent (voice "Lily") that answers
+from Joe's live Finance Chief data in Supabase.
+
+1. Sign in at elevenlabs.io, open **Agents → Mary Jane – Joe's Voice Commander**.
+2. Press **Test AI agent** (allow the microphone once).
+3. Say "Brief me", or ask about any holding, risk, alerts, earnings or goals.
+
+How it works: Mary Jane calls one read-only Supabase function (`jev-voice`), which
+checks a hashed access key and returns a ~6 KB snapshot (portfolio, risk rules,
+alerts, catalysts, income, goals, projects). She can't trade, email or see the diary.
+The agent is locked to Joe's ElevenLabs login, and voice minutes use ElevenLabs credits.
+
 ## Safety rules
 
 - The morning briefing only **reads**; the only thing it sends is one email, to Joe.
@@ -57,7 +71,7 @@ To install: upload `jev-skill.zip` in claude.ai under Settings → Capabilities 
 |---|---|---|
 | 1 | Daily briefing by email | Live (6:56am daily) |
 | 2 | Voice commands: draft replies, book diary blocks, log dividends | Built — upload skill to switch on |
-| 3 | Spoken audio briefing (ElevenLabs voice) and phone agent | Planned |
+| 3 | Mary Jane voice agent (ElevenLabs) on live Supabase data | Live — read-only |
 | 4 | Weekly £1m-plan check, income tracker, ISA allowance alerts | Planned |
 
 ## Known gaps
