@@ -16,6 +16,7 @@ This repository demonstrates the basic concepts of GitHub:
 - `hello.py` - A simple Python script example
 - `notes.txt` - A text file showing you can store any type of file
 - `ideas/` - A folder showing how to organize files
+- `jev/` - JEV, Joe's personal assistant (morning briefing and roadmap)
 
 ## How GitHub Helps
 
