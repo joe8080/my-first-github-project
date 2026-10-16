@@ -4,9 +4,13 @@ JEV is Joe's JARVIS: a voice-friendly assistant built on Claude and the
 apps Joe already uses (Gmail, Google Calendar, Google Sheets).
 No servers, no code to run, no passwords stored here.
 
-## Phase 1 — Morning briefing (live)
+## Phase 1 — Morning briefing
 
-Every morning at about **6:56am UK time**, JEV:
+Scheduled task "JEV Morning Briefing" is set up but **paused** until Gmail,
+Google Calendar and Google Sheets are added to it in claude.ai (scheduled tasks
+created from a coding session can't carry connectors on this account).
+
+Once switched on, every morning at about **6:56am UK time**, JEV:
 
 1. Reads today's diary.
 2. Checks unread email for anything that needs Joe.
@@ -34,7 +38,7 @@ The exact instructions JEV follows are in [`briefing-prompt.md`](briefing-prompt
 
 | Phase | What JEV does | Status |
 |---|---|---|
-| 1 | Daily briefing by email | Live, 1-week trial |
+| 1 | Daily briefing by email | First briefing sent 16 Oct; daily run paused until connectors added |
 | 2 | Voice commands: draft replies, book diary blocks, log dividends | Next |
 | 3 | Spoken audio briefing (ElevenLabs voice) and phone agent | Planned |
 | 4 | Weekly £1m-plan check, income tracker, ISA allowance alerts | Planned |
